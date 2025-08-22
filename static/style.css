@@ -1,0 +1,247 @@
+/* General Body Styling */
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+    background-color: #f4f4f4;
+    color: #333;
+}
+
+/* Header and Filter Controls */
+h1 {
+    color: #333;
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.filter-controls {
+    display: flex;
+    flex-direction: column; /* Changed to column to stack rows */
+    justify-content: center;
+    align-items: center; /* Centers the rows horizontally */
+    margin-bottom: 30px;
+    gap: 10px; /* Gap between the rows */
+}
+
+.filter-row {
+    display: flex;
+    justify-content: center; /* Centers items within each row */
+    align-items: center;
+    gap: 10px; /* Gap between items within each row */
+    width: 100%; /* Ensure rows take full width of parent */
+    flex-wrap: wrap; /* Allow items within a row to wrap if needed */
+}
+
+.filter-controls label {
+    font-weight: bold;
+}
+
+.filter-controls select, .filter-controls input {
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 1rem;
+    background-color: #fff;
+}
+
+.filter-controls select {
+    cursor: pointer;
+}
+
+.filter-controls input[type="text"] {
+    min-width: 200px;
+}
+
+.filter-controls input[type="number"] {
+    width: 80px;
+}
+
+/* Item List - One line per item as specified in README */
+.item-list {
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+}
+
+/* Item Row - One line display */
+.item-row {
+    display: grid; /* Changed to grid for alignment */
+    /* Define columns: Icon (fixed), Name (flexible), Type (fixed), Character (fixed), Min Level (fixed), Quantity (fixed), EquipsTo (flexible) */
+    grid-template-columns: 44px minmax(150px, 1fr) 120px 150px 80px 80px minmax(100px, 1.5fr); /* Adjusted column widths, added new column */
+    gap: 12px; /* Gap between grid items */
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid #eee;
+    cursor: pointer;
+    position: relative;
+    transition: background-color 0.2s ease;
+}
+
+.item-row:hover {
+    background-color: #f8f9fa;
+}
+
+.item-row:last-child {
+    border-bottom: none;
+}
+
+.item-icon {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: #fff;
+    /* margin-right: 12px; Removed, handled by grid gap */
+    flex-shrink: 0;
+}
+
+.item-name {
+    font-weight: bold;
+    color: #0056b3;
+    /* margin-right: 12px; Removed */
+    /* min-width: 200px; Removed, handled by grid-template-columns */
+    white-space: nowrap; /* Prevent wrapping if name is too long */
+    overflow: hidden; /* Hide overflow */
+    text-overflow: ellipsis; /* Add ellipsis for overflow */
+}
+
+.item-name.btc {
+    color: #dc3545; /* Red color for BTC items */
+}
+
+.item-type {
+    color: #666;
+    /* margin-right: 12px; Removed */
+    /* min-width: 120px; Removed */
+    font-size: 0.9em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.item-character {
+    color: #888;
+    /* margin-right: 12px; Removed */
+    /* min-width: 150px; Removed */
+    font-size: 0.9em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* New style for minimum level */
+.item-min-level {
+    color: #555;
+    font-size: 0.9em;
+    text-align: right; /* Align to right for numerical value */
+}
+
+.item-quantity {
+    color: #555;
+    font-size: 0.9em;
+    /* margin-left: auto; Removed, grid handles positioning */
+    text-align: right; /* Align to right for numerical value */
+}
+
+/* New style for equips to */
+.item-equips-to {
+    color: #555;
+    font-size: 0.9em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Hover tooltip for full item details */
+.item-tooltip {
+    position: absolute;
+    top: 0; /* Align with the top of the item-row */
+    left: 50%; /* Position the left edge of the tooltip at the middle of the item-row */
+    background-color: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 15px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(10px); /* Slide in from the left */
+    transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
+    max-width: 600px;
+    text-align: left;
+}
+
+.item-row:hover .item-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(0);
+}
+
+.item-tooltip p, .item-tooltip ul {
+    margin: 5px 0;
+    font-size: 0.9em;
+    line-height: 1.4;
+}
+
+.item-tooltip ul {
+    list-style-type: disc;
+    padding-left: 20px;
+}
+
+.item-tooltip h4 {
+    margin: 0 0 10px 0;
+    color: #0056b3;
+    font-size: 1.1em;
+}
+
+.item-tooltip h4.btc {
+    color: #dc3545; /* Red color for BTC items in tooltip */
+}
+
+/* Pagination Controls */
+.pagination-controls {
+    display: flex;
+    justify-content: center;
+    margin-top: 30px;
+    gap: 10px;
+}
+
+.pagination-button {
+    padding: 10px 15px;
+    border: 1px solid #007bff;
+    border-radius: 4px;
+    background-color: #007bff;
+    color: white;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.pagination-button:hover {
+    background-color: #0056b3;
+    border-color: #0056b3;
+}
+
+.pagination-button.active {
+    background-color: #0056b3;
+    border-color: #0056b3;
+    cursor: default;
+    font-weight: bold;
+}
+
+.pagination-button:disabled {
+    background-color: #cccccc;
+    border-color: #cccccc;
+    cursor: not-allowed;
+}
+
+/* Style for item count paragraph */
+.item-count {
+    text-align: center;
+    margin: 15px 0;
+    font-size: 1.1em;
+    color: #555;
+    font-weight: bold;
+}
