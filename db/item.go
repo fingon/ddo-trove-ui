@@ -3,7 +3,7 @@ package db
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -114,12 +114,14 @@ type AllItems struct {
 }
 
 // LoadItemsFromDir reads all JSON files from a directory and parses them into Item structs.
-func LoadItemsFromDir(dirPath string) (*AllItems, error) {
+// It also returns a map of file paths to their last modification times.
+func LoadItemsFromDir(dirPath string) (*AllItems, map[string]time.Time, error) {
 	var allItems AllItems
+	fileModTimes := make(map[string]time.Time) // New map to store mod times
 
-	files, err := ioutil.ReadDir(dirPath)
+	files, err := os.ReadDir(dirPath) // Changed from ioutil.ReadDir
 	if err != nil {
-		return nil, fmt.Errorf("failed to read directory: %w", err)
+		return nil, nil, fmt.Errorf("failed to read directory: %w", err)
 	}
 
 	for _, file := range files {
@@ -128,7 +130,14 @@ func LoadItemsFromDir(dirPath string) (*AllItems, error) {
 		}
 
 		filePath := filepath.Join(dirPath, file.Name())
-		data, err := ioutil.ReadFile(filePath)
+		info, err := os.Stat(filePath) // Get file info to store mod time
+		if err != nil {
+			fmt.Printf("Warning: Failed to get file info for %s: %v\n", filePath, err)
+			continue
+		}
+		fileModTimes[filePath] = info.ModTime() // Store mod time
+
+		data, err := os.ReadFile(filePath) // Changed from ioutil.ReadFile
 		if err != nil {
 			fmt.Printf("Warning: Failed to read file %s: %v\n", filePath, err)
 			continue
@@ -197,7 +206,7 @@ func LoadItemsFromDir(dirPath string) (*AllItems, error) {
 		fmt.Printf("Warning: Could not unmarshal %s as either CharacterData or AccountData. Error: %v\n", filePath, err)
 	}
 
-	return &allItems, nil
+	return &allItems, fileModTimes, nil // Return fileModTimes
 }
 
 // FilterItems filters a slice of items by item type, item sub type, character name, name search, minimum level range, and equips to.

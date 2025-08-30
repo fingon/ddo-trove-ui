@@ -8,6 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings" // Added for strings.HasSuffix
+	"sync"    // Added for mutex
+	"time"    // Added for time.Tick
 
 	"github.com/fingon/ddo-trove-ui/db"
 	"github.com/fingon/ddo-trove-ui/templates"
@@ -62,16 +65,98 @@ func getPaginationRange(currentPage, totalPages int) (int, int) {
 }
 
 const (
-	itemsPerPage = 100 // Changed from 20 to 100 to match README.md
+	itemsPerPage = 100
 	defaultPage  = 1
 )
 
 var (
 	inputDir string
+	// Protected by itemsMutex
+	allItems     *db.AllItems
+	fileModTimes map[string]time.Time
+	itemsMutex   sync.RWMutex
 )
 
 func init() {
 	flag.StringVar(&inputDir, "input", "", "Directory containing JSON files (e.g., example/local)")
+}
+
+// monitorAndReloadItems checks the input directory for changes and reloads items if necessary.
+func monitorAndReloadItems(dirPath string) {
+	log.Println("Checking for file changes...")
+	currentFileModTimes := make(map[string]time.Time)
+
+	files, err := os.ReadDir(dirPath)
+	if err != nil {
+		log.Printf("Error reading directory for monitoring: %v", err)
+		return
+	}
+
+	needsReload := false
+
+	// Acquire read lock to compare with current global fileModTimes
+	itemsMutex.RLock()
+	defer itemsMutex.RUnlock() // Release read lock after comparison
+
+	// Check for new files or modified files
+	for _, file := range files {
+		if file.IsDir() || !strings.HasSuffix(file.Name(), ".json") {
+			continue
+		}
+		filePath := filepath.Join(dirPath, file.Name())
+		info, err := os.Stat(filePath)
+		if err != nil {
+			log.Printf("Warning: Failed to get file info for %s during monitoring: %v\n", filePath, err)
+			continue
+		}
+		currentFileModTimes[filePath] = info.ModTime()
+
+		oldModTime, exists := fileModTimes[filePath]
+		if !exists || info.ModTime().After(oldModTime) {
+			log.Printf("Detected change in file: %s (old: %v, new: %v)", filePath, oldModTime, info.ModTime())
+			needsReload = true
+			break
+		}
+	}
+
+	// If no changes detected yet, check for deleted files or file count changes
+	if !needsReload {
+		if len(currentFileModTimes) != len(fileModTimes) {
+			log.Println("Detected file count change (possibly deleted/added files). Reloading.")
+			needsReload = true
+		} else {
+			// If file counts are the same, but a file was renamed, this won't catch it
+			// unless we iterate through old fileModTimes and check if they exist in currentFileModTimes
+			for oldPath := range fileModTimes {
+				if _, exists := currentFileModTimes[oldPath]; !exists {
+					log.Printf("Detected deleted file: %s. Reloading.", oldPath)
+					needsReload = true
+					break
+				}
+			}
+		}
+	}
+
+	if needsReload {
+		log.Println("Reloading all items due to detected changes...")
+		// Acquire write lock to update global allItems and fileModTimes
+		itemsMutex.RUnlock() // Release read lock before acquiring write lock
+		itemsMutex.Lock()
+		defer itemsMutex.Unlock() // Release write lock
+
+		newAllItems, newFileModTimes, err := db.LoadItemsFromDir(dirPath)
+		if err != nil {
+			log.Printf("Error reloading items: %v", err)
+			// Re-acquire read lock if we failed to reload, to maintain consistent state for defer RUnlock
+			itemsMutex.RLock()
+			return
+		}
+		allItems = newAllItems
+		fileModTimes = newFileModTimes
+		log.Printf("Reload complete. Loaded %d items.", len(allItems.Items))
+	} else {
+		log.Println("No file changes detected.")
+	}
 }
 
 func main() {
@@ -94,28 +179,33 @@ func main() {
 		log.Fatalf("Error: Input path '%s' is not a directory.", absPath)
 	}
 
-	log.Printf("Loading JSON files from: %s", absPath)
-	allItems, err := db.LoadItemsFromDir(absPath)
+	// Initial load of items and file modification times
+	itemsMutex.Lock()
+	allItems, fileModTimes, err = db.LoadItemsFromDir(absPath)
 	if err != nil {
 		log.Fatalf("Error loading items: %v", err)
 	}
+	log.Printf("Initial load: Loaded %d items.", len(allItems.Items))
+	itemsMutex.Unlock()
 
-	log.Printf("Loaded %d items.", len(allItems.Items))
-
-	// Get unique item types for filtering dropdown
-	uniqueItemTypes := db.GetUniqueItemTypes(allItems.Items)
-	// Get unique item sub types for filtering dropdown
-	uniqueItemSubTypes := db.GetUniqueItemSubTypes(allItems.Items)
-	// Get unique character names for filtering dropdown
-	uniqueCharacterNames := db.GetUniqueCharacterNames(allItems.Items)
-	// New: Get unique EquipsTo values for filtering dropdown
-	uniqueEquipsTo := db.GetUniqueEquipsTo(allItems.Items)
+	// Start goroutine to monitor files and reload every minute
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			monitorAndReloadItems(absPath)
+		}
+	}()
 
 	// Serve static files (CSS, images, etc.)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
 	// HTTP Handlers
 	http.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Acquire read lock before accessing allItems
+		itemsMutex.RLock()
+		defer itemsMutex.RUnlock()
+
 		itemType := r.URL.Query().Get("itemType")
 		if itemType == "" {
 			itemType = "All" // Default to "All" if not specified
@@ -179,10 +269,14 @@ func main() {
 		}
 		paginatedItems := filteredItems[startIndex:endIndex]
 
-		templates.Index(paginatedItems, uniqueItemTypes, itemType, uniqueItemSubTypes, itemSubType, uniqueCharacterNames, characterName, minLevel, maxLevel, page, totalPages, len(filteredItems), uniqueEquipsTo, equipsTo).Render(context.Background(), w) // Pass uniqueEquipsTo and equipsTo
+		templates.Index(paginatedItems, db.GetUniqueItemTypes(allItems.Items), itemType, db.GetUniqueItemSubTypes(allItems.Items), itemSubType, db.GetUniqueCharacterNames(allItems.Items), characterName, minLevel, maxLevel, page, totalPages, len(filteredItems), db.GetUniqueEquipsTo(allItems.Items), equipsTo).Render(context.Background(), w) // Pass uniqueEquipsTo and equipsTo
 	}))
 
 	http.HandleFunc("/filter", func(w http.ResponseWriter, r *http.Request) {
+		// Acquire read lock before accessing allItems
+		itemsMutex.RLock()
+		defer itemsMutex.RUnlock()
+
 		itemType := r.URL.Query().Get("itemType")
 		if itemType == "" {
 			itemType = "All" // Default to "All" if not specified

@@ -30,7 +30,7 @@ This is a simple web UI for browsing DDO (Dungeons and Dragons Online) item data
 ### Prerequisites
 
 *   Go (1.23 or higher)
-*   Your DDO item data in JSON format (e.g., from a tool like Dungeon Helper Trove plugin).
+*   Your DDO item data in JSON format (from a tool like [Dungeon Helper](https://dungeonhelper.com) Trove plugin).
 
 ### Running the Application
 
@@ -41,7 +41,7 @@ This is a simple web UI for browsing DDO (Dungeons and Dragons Online) item data
     ```
 
 2.  **Place your JSON data:**
-    Create a directory (e.g., `example/local`) and place your DDO item JSON files inside it.
+    Create a directory (e.g., `example/local`) and place your DDO item JSON files inside it. (Or point it at where Trove plugin stores them, e.g. `..AppData/Roaming/Dungeon Helper/plugins/Trove/<server>/<id>/<id>`.)
 
 3.  **Run the application:**
     ```bash
