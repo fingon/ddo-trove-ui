@@ -2,15 +2,15 @@ package main
 
 import (
 	"context"
-	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings" // Added for strings.HasSuffix
-	"sync"    // Added for mutex
-	"time"    // Added for time.Tick
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/fingon/ddo-trove-ui/db"
 	"github.com/fingon/ddo-trove-ui/templates"
@@ -70,27 +70,52 @@ const (
 )
 
 var (
-	inputDir string
 	// Protected by itemsMutex
 	allItems     *db.AllItems
 	fileModTimes map[string]time.Time
 	itemsMutex   sync.Mutex
 )
 
-func init() {
-	flag.StringVar(&inputDir, "input", "", "Directory containing JSON files (e.g., example/local)")
+// loadAndAggregateItems loads items from multiple directories and aggregates them.
+// It returns the combined AllItems and a map of all file modification times.
+func loadAndAggregateItems(dirPaths []string) (*db.AllItems, map[string]time.Time, error) {
+	combinedAllItems := &db.AllItems{}
+	combinedFileModTimes := make(map[string]time.Time)
+
+	for _, dirPath := range dirPaths {
+		// Ensure the input directory exists and is valid
+		absPath, err := filepath.Abs(dirPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error resolving absolute path for input directory '%s': %w", dirPath, err)
+		}
+		info, err := os.Stat(absPath)
+		if os.IsNotExist(err) {
+			log.Printf("Warning: Input directory '%s' does not exist. Skipping.", absPath)
+			continue
+		}
+		if !info.IsDir() {
+			log.Printf("Warning: Input path '%s' is not a directory. Skipping.", absPath)
+			continue
+		}
+
+		dirItems, dirFileModTimes, err := db.LoadItemsFromDir(absPath)
+		if err != nil {
+			log.Printf("Error loading items from directory '%s': %v", absPath, err)
+			// Continue to next directory, don't fail the whole load
+			continue
+		}
+		combinedAllItems.Items = append(combinedAllItems.Items, dirItems.Items...)
+		for k, v := range dirFileModTimes {
+			combinedFileModTimes[k] = v
+		}
+	}
+	return combinedAllItems, combinedFileModTimes, nil
 }
 
-// monitorAndReloadItems checks the input directory for changes and reloads items if necessary.
-func monitorAndReloadItems(dirPath string) {
-	log.Println("Checking for file changes...")
+// monitorAndReloadItems checks the input directories for changes and reloads items if necessary.
+func monitorAndReloadItems(dirPaths []string) {
+	log.Println("Checking for file changes across all input directories...")
 	currentFileModTimes := make(map[string]time.Time)
-
-	files, err := os.ReadDir(dirPath)
-	if err != nil {
-		log.Printf("Error reading directory for monitoring: %v", err)
-		return
-	}
 
 	needsReload := false
 
@@ -98,24 +123,36 @@ func monitorAndReloadItems(dirPath string) {
 	itemsMutex.Lock()
 	defer itemsMutex.Unlock()
 
-	// Check for new files or modified files
-	for _, file := range files {
-		if file.IsDir() || !strings.HasSuffix(file.Name(), ".json") {
-			continue
-		}
-		filePath := filepath.Join(dirPath, file.Name())
-		info, err := os.Stat(filePath)
+	// Check for new files or modified files in all directories
+	for _, dirPath := range dirPaths {
+		files, err := os.ReadDir(dirPath)
 		if err != nil {
-			log.Printf("Warning: Failed to get file info for %s during monitoring: %v\n", filePath, err)
+			log.Printf("Error reading directory '%s' for monitoring: %v", dirPath, err)
+			// Continue to next directory, don't stop monitoring
 			continue
 		}
-		currentFileModTimes[filePath] = info.ModTime()
 
-		oldModTime, exists := fileModTimes[filePath]
-		if !exists || info.ModTime().After(oldModTime) {
-			log.Printf("Detected change in file: %s (old: %v, new: %v)", filePath, oldModTime, info.ModTime())
-			needsReload = true
-			break
+		for _, file := range files {
+			if file.IsDir() || !strings.HasSuffix(file.Name(), ".json") {
+				continue
+			}
+			filePath := filepath.Join(dirPath, file.Name())
+			info, err := os.Stat(filePath)
+			if err != nil {
+				log.Printf("Warning: Failed to get file info for %s during monitoring: %v\n", filePath, err)
+				continue
+			}
+			currentFileModTimes[filePath] = info.ModTime()
+
+			oldModTime, exists := fileModTimes[filePath]
+			if !exists || info.ModTime().After(oldModTime) {
+				log.Printf("Detected change in file: %s (old: %v, new: %v)", filePath, oldModTime, info.ModTime())
+				needsReload = true
+				break // Break from inner file loop
+			}
+		}
+		if needsReload {
+			break // Break from outer directory loop
 		}
 	}
 
@@ -125,8 +162,7 @@ func monitorAndReloadItems(dirPath string) {
 			log.Println("Detected file count change (possibly deleted/added files). Reloading.")
 			needsReload = true
 		} else {
-			// If file counts are the same, but a file was renamed, this won't catch it
-			// unless we iterate through old fileModTimes and check if they exist in currentFileModTimes
+			// Check for deleted files by iterating through old fileModTimes
 			for oldPath := range fileModTimes {
 				if _, exists := currentFileModTimes[oldPath]; !exists {
 					log.Printf("Detected deleted file: %s. Reloading.", oldPath)
@@ -139,7 +175,7 @@ func monitorAndReloadItems(dirPath string) {
 
 	if needsReload {
 		log.Println("Reloading all items due to detected changes...")
-		newAllItems, newFileModTimes, err := db.LoadItemsFromDir(dirPath)
+		newAllItems, newFileModTimes, err := loadAndAggregateItems(dirPaths) // Use the new aggregation function
 		if err != nil {
 			log.Printf("Error reloading items: %v", err)
 			return
@@ -153,38 +189,26 @@ func monitorAndReloadItems(dirPath string) {
 }
 
 func main() {
-	flag.Parse()
-
-	if inputDir == "" {
-		log.Fatal("Error: --input directory is required.")
+	if len(os.Args) <= 1 {
+		log.Fatal("Error: No input directories specified - pass at least one.")
 	}
 
-	// Ensure the input directory exists and is valid
-	absPath, err := filepath.Abs(inputDir)
+	inputDirs := os.Args[1:]
+
+	// Initial load of items and file modification times from all specified directories
+	var err error
+	allItems, fileModTimes, err = loadAndAggregateItems(inputDirs)
 	if err != nil {
-		log.Fatalf("Error resolving absolute path for input directory: %v", err)
+		log.Fatalf("Error during initial load of items: %v", err)
 	}
-	info, err := os.Stat(absPath)
-	if os.IsNotExist(err) {
-		log.Fatalf("Error: Input directory '%s' does not exist.", absPath)
-	}
-	if !info.IsDir() {
-		log.Fatalf("Error: Input path '%s' is not a directory.", absPath)
-	}
-
-	// Initial load of items and file modification times
-	allItems, fileModTimes, err = db.LoadItemsFromDir(absPath)
-	if err != nil {
-		log.Fatalf("Error loading items: %v", err)
-	}
-	log.Printf("Initial load: Loaded %d items.", len(allItems.Items))
+	log.Printf("Initial load: Loaded %d items from %d directories.", len(allItems.Items), len(inputDirs))
 
 	// Start goroutine to monitor files and reload every minute
 	go func() {
 		ticker := time.NewTicker(1 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
-			monitorAndReloadItems(absPath)
+			monitorAndReloadItems(inputDirs) // Pass the slice of directories
 		}
 	}()
 

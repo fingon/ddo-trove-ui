@@ -4,13 +4,13 @@
 # Copyright (c) 2025 Markus Stenberg
 #
 # Created:       Tue Aug 19 15:53:13 2025 mstenber
-# Last modified: Thu Aug 21 14:35:24 2025 mstenber
-# Edit time:     4 min
+# Last modified: Sun Aug 31 09:20:08 2025 mstenber
+# Edit time:     5 min
 #
 #
 
 run: build
-	go run . --input data
+	go run . data*
 
 build:
 	make -C templates

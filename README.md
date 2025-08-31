@@ -16,6 +16,7 @@ This is a simple web UI for browsing DDO (Dungeons and Dragons Online) item data
     *   Filter by Equips To: Filter items by where they can be equipped (e.g., "Hands", "Body", "Finger").
 *   **Pagination**: Browse through large item lists page by page.
 *   **Item Details on Hover**: Hover over an item in the list to see its full details (description, clicky, augment slots, effects, etc.).
+*   **Multiple Input Directories**: The application now uses default input directories (`example/local`, `example/server2`). You can modify these defaults in `main.go` if needed.
 
 ## Screenshots
 
@@ -41,13 +42,13 @@ This is a simple web UI for browsing DDO (Dungeons and Dragons Online) item data
     ```
 
 2.  **Place your JSON data:**
-    Create a directory (e.g., `example/local`) and place your DDO item JSON files inside it. (Or point it at where Trove plugin stores them, e.g. `..AppData/Roaming/Dungeon Helper/plugins/Trove/<server>/<id>/<id>`.)
+    Place your DDO item JSON files into the default directories `example/local` and `example/server2`. You can create these directories if they don't exist. (Or point it at where Trove plugin stores them, e.g. `..AppData/Roaming/Dungeon Helper/plugins/Trove/<server>/<account-id>` and then start the server with those paths).
 
 3.  **Run the application:**
     ```bash
-    go run main.go -input example/local
+    go run main.go example/local example/local2
     ```
-    Replace `example/local` with the path to your JSON data directory.
+    The application will automatically load items from the `example/local` and `example/local2` directories.
 
 4.  **Access the UI:**
     Open your web browser and navigate to `http://localhost:8080`.
