@@ -74,7 +74,7 @@ var (
 	// Protected by itemsMutex
 	allItems     *db.AllItems
 	fileModTimes map[string]time.Time
-	itemsMutex   sync.RWMutex
+	itemsMutex   sync.Mutex
 )
 
 func init() {
@@ -94,9 +94,9 @@ func monitorAndReloadItems(dirPath string) {
 
 	needsReload := false
 
-	// Acquire read lock to compare with current global fileModTimes
-	itemsMutex.RLock()
-	defer itemsMutex.RUnlock() // Release read lock after comparison
+	// Acquire lock to compare with current global fileModTimes
+	itemsMutex.Lock()
+	defer itemsMutex.Unlock()
 
 	// Check for new files or modified files
 	for _, file := range files {
@@ -139,16 +139,9 @@ func monitorAndReloadItems(dirPath string) {
 
 	if needsReload {
 		log.Println("Reloading all items due to detected changes...")
-		// Acquire write lock to update global allItems and fileModTimes
-		itemsMutex.RUnlock() // Release read lock before acquiring write lock
-		itemsMutex.Lock()
-		defer itemsMutex.Unlock() // Release write lock
-
 		newAllItems, newFileModTimes, err := db.LoadItemsFromDir(dirPath)
 		if err != nil {
 			log.Printf("Error reloading items: %v", err)
-			// Re-acquire read lock if we failed to reload, to maintain consistent state for defer RUnlock
-			itemsMutex.RLock()
 			return
 		}
 		allItems = newAllItems
@@ -180,13 +173,11 @@ func main() {
 	}
 
 	// Initial load of items and file modification times
-	itemsMutex.Lock()
 	allItems, fileModTimes, err = db.LoadItemsFromDir(absPath)
 	if err != nil {
 		log.Fatalf("Error loading items: %v", err)
 	}
 	log.Printf("Initial load: Loaded %d items.", len(allItems.Items))
-	itemsMutex.Unlock()
 
 	// Start goroutine to monitor files and reload every minute
 	go func() {
@@ -202,9 +193,9 @@ func main() {
 
 	// HTTP Handlers
 	http.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Acquire read lock before accessing allItems
-		itemsMutex.RLock()
-		defer itemsMutex.RUnlock()
+		// Acquire lock before accessing allItems
+		itemsMutex.Lock()
+		defer itemsMutex.Unlock()
 
 		itemType := r.URL.Query().Get("itemType")
 		if itemType == "" {
@@ -274,8 +265,8 @@ func main() {
 
 	http.HandleFunc("/filter", func(w http.ResponseWriter, r *http.Request) {
 		// Acquire read lock before accessing allItems
-		itemsMutex.RLock()
-		defer itemsMutex.RUnlock()
+		itemsMutex.Lock()
+		defer itemsMutex.Unlock()
 
 		itemType := r.URL.Query().Get("itemType")
 		if itemType == "" {
