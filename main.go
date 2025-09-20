@@ -77,16 +77,15 @@ var (
 )
 
 // loadAndAggregateItems loads items from multiple directories and aggregates them.
-// It returns the combined AllItems and a map of all file modification times.
-func loadAndAggregateItems(dirPaths []string) (*db.AllItems, map[string]time.Time, error) {
+// It returns the combined AllItems.
+func loadAndAggregateItems(dirPaths []string) (*db.AllItems, error) {
 	combinedAllItems := &db.AllItems{}
-	combinedFileModTimes := make(map[string]time.Time)
 
 	for _, dirPath := range dirPaths {
 		// Ensure the input directory exists and is valid
 		absPath, err := filepath.Abs(dirPath)
 		if err != nil {
-			return nil, nil, fmt.Errorf("error resolving absolute path for input directory '%s': %w", dirPath, err)
+			return nil, fmt.Errorf("error resolving absolute path for input directory '%s': %w", dirPath, err)
 		}
 		info, err := os.Stat(absPath)
 		if os.IsNotExist(err) {
@@ -98,23 +97,21 @@ func loadAndAggregateItems(dirPaths []string) (*db.AllItems, map[string]time.Tim
 			continue
 		}
 
-		dirItems, dirFileModTimes, err := db.LoadItemsFromDir(absPath)
+		dirItems, err := db.LoadItemsFromDir(absPath)
 		if err != nil {
 			log.Printf("Error loading items from directory '%s': %v", absPath, err)
 			// Continue to next directory, don't fail the whole load
-			continue
+			// The dirFileModTimes returned by db.LoadItemsFromDir will still contain
+			// mod times for files that were successfully stat-ed, even if read/unmarshal failed.
+			// We should still merge these mod times.
 		}
 		combinedAllItems.Items = append(combinedAllItems.Items, dirItems.Items...)
-		for k, v := range dirFileModTimes {
-			combinedFileModTimes[k] = v
-		}
 	}
-	return combinedAllItems, combinedFileModTimes, nil
+	return combinedAllItems, nil
 }
 
 // monitorAndReloadItems checks the input directories for changes and reloads items if necessary.
 func monitorAndReloadItems(dirPaths []string) {
-	log.Println("Checking for file changes across all input directories...")
 	currentFileModTimes := make(map[string]time.Time)
 
 	needsReload := false
@@ -123,12 +120,13 @@ func monitorAndReloadItems(dirPaths []string) {
 	itemsMutex.Lock()
 	defer itemsMutex.Unlock()
 
-	// Check for new files or modified files in all directories
+	initial := fileModTimes == nil
+
+	// First pass: Populate currentFileModTimes and check for new/modified files
 	for _, dirPath := range dirPaths {
 		files, err := os.ReadDir(dirPath)
 		if err != nil {
 			log.Printf("Error reading directory '%s' for monitoring: %v", dirPath, err)
-			// Continue to next directory, don't stop monitoring
 			continue
 		}
 
@@ -140,52 +138,55 @@ func monitorAndReloadItems(dirPaths []string) {
 			info, err := os.Stat(filePath)
 			if err != nil {
 				log.Printf("Warning: Failed to get file info for %s during monitoring: %v\n", filePath, err)
-				continue
+				continue // Skip this file if we can't stat it
 			}
-			currentFileModTimes[filePath] = info.ModTime()
+			currentFileModTimes[filePath] = info.ModTime() // Always populate currentFileModTimes
 
-			oldModTime, exists := fileModTimes[filePath]
-			if !exists || info.ModTime().After(oldModTime) {
+			oldModTime, exists := fileModTimes[filePath] // Compare with the *global* fileModTimes
+			if !initial && (!exists || info.ModTime().After(oldModTime)) {
 				log.Printf("Detected change in file: %s (old: %v, new: %v)", filePath, oldModTime, info.ModTime())
-				needsReload = true
-				break // Break from inner file loop
+				needsReload = true // Set flag, but continue processing other files to fully populate currentFileModTimes
 			}
-		}
-		if needsReload {
-			break // Break from outer directory loop
 		}
 	}
 
-	// If no changes detected yet, check for deleted files or file count changes
-	if !needsReload {
+	// Second pass: Check for deleted files or file count changes
+	if !initial && !needsReload {
 		if len(currentFileModTimes) != len(fileModTimes) {
 			log.Println("Detected file count change (possibly deleted/added files). Reloading.")
 			needsReload = true
 		} else {
-			// Check for deleted files by iterating through old fileModTimes
+			// Check for deleted files by iterating through old fileModTimes (global)
 			for oldPath := range fileModTimes {
 				if _, exists := currentFileModTimes[oldPath]; !exists {
 					log.Printf("Detected deleted file: %s. Reloading.", oldPath)
 					needsReload = true
-					break
+					break // Break once a deleted file is found, no need to check further
 				}
 			}
 		}
 	}
 
-	if needsReload {
-		log.Println("Reloading all items due to detected changes...")
-		newAllItems, newFileModTimes, err := loadAndAggregateItems(dirPaths) // Use the new aggregation function
-		if err != nil {
-			log.Printf("Error reloading items: %v", err)
-			return
-		}
-		allItems = newAllItems
-		fileModTimes = newFileModTimes
-		log.Printf("Reload complete. Loaded %d items.", len(allItems.Items))
-	} else {
-		log.Println("No file changes detected.")
+	if initial {
+		fileModTimes = currentFileModTimes
+		return
 	}
+
+	if !needsReload {
+		return
+	}
+
+	fileModTimes = currentFileModTimes
+	log.Println("Reloading all items due to detected changes...")
+	newAllItems, err := loadAndAggregateItems(dirPaths)
+	if err != nil {
+		log.Printf("Error reloading items: %v", err)
+		// allItems remains unchanged (old data)
+		return
+	}
+	// If reload succeeded, update both allItems and fileModTimes
+	allItems = newAllItems
+	log.Printf("Reload complete. Loaded %d items.", len(allItems.Items))
 }
 
 func main() {
@@ -197,7 +198,7 @@ func main() {
 
 	// Initial load of items and file modification times from all specified directories
 	var err error
-	allItems, fileModTimes, err = loadAndAggregateItems(inputDirs)
+	allItems, err = loadAndAggregateItems(inputDirs)
 	if err != nil {
 		log.Fatalf("Error during initial load of items: %v", err)
 	}
