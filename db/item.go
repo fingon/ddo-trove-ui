@@ -10,9 +10,11 @@ import (
 	"time"
 )
 
+const FilterAll = "All"
+
 // Root structure for character-specific bank/inventory files
 type CharacterData struct {
-	CharacterId         int64      `json:"CharacterId"`
+	CharacterID         int64      `json:"CharacterId"`
 	Name                string     `json:"Name"`
 	LastUpdated         *time.Time `json:"LastUpdated"` // Use pointer for optional/null
 	PersonalBank        *Bank      `json:"PersonalBank"`
@@ -43,7 +45,7 @@ type Bank struct {
 }
 
 type Tab struct {
-	Id    int             `json:"Id"`
+	ID    int             `json:"Id"`
 	Name  string          `json:"Name"`
 	Index int             `json:"Index"`
 	Pages map[string]Page `json:"Pages"`
@@ -55,16 +57,16 @@ type Page struct {
 
 // Item structure (common for all containers)
 type Item struct {
-	OwnerId              int64         `json:"OwnerId"`
+	OwnerID              int64         `json:"OwnerId"`
 	CharacterName        string        `json:"CharacterName"`
-	ItemId               int64         `json:"ItemId"`
+	ItemID               int64         `json:"ItemId"`
 	Container            string        `json:"Container"`
 	Tab                  int           `json:"Tab"`
 	TabName              string        `json:"TabName"`
 	Row                  int           `json:"Row"`
 	Column               int           `json:"Column"`
 	Quantity             int           `json:"Quantity"`
-	WeenieId             int64         `json:"WeenieId,omitempty"`
+	WeenieID             int64         `json:"WeenieId,omitempty"`
 	Charges              int           `json:"Charges,omitempty"`
 	MaxCharges           int           `json:"MaxCharges,omitempty"`
 	TreasureType         string        `json:"TreasureType"`
@@ -208,13 +210,13 @@ func FilterItems(items []Item, itemType, itemSubType, characterName, nameSearch 
 	searchLower := strings.ToLower(nameSearch)
 
 	for _, item := range items {
-		matchItemType := (itemType == "" || itemType == "All" || item.ItemType == itemType)
-		matchItemSubType := (itemSubType == "" || itemSubType == "All" || item.ItemSubType == itemSubType)
-		matchCharacterName := (characterName == "" || characterName == "All" || item.CharacterName == characterName)
+		matchItemType := (itemType == "" || itemType == FilterAll || item.ItemType == itemType)
+		matchItemSubType := (itemSubType == "" || itemSubType == FilterAll || item.ItemSubType == itemSubType)
+		matchCharacterName := (characterName == "" || characterName == FilterAll || item.CharacterName == characterName)
 		matchMinLevel := (item.MinimumLevel >= minLevel && item.MinimumLevel <= maxLevel)
 
 		// EquipsTo filter
-		matchEquipsTo := (equipsTo == "" || equipsTo == "All")
+		matchEquipsTo := (equipsTo == "" || equipsTo == FilterAll)
 		if !matchEquipsTo { // Only check if a specific filter is selected
 			for _, eq := range item.EquipsTo {
 				if eq == equipsTo {
@@ -271,8 +273,7 @@ func FilterItems(items []Item, itemType, itemSubType, characterName, nameSearch 
 	})
 
 	// Combine results with name matches first
-	filtered := append(nameMatches, effectMatches...)
-	return filtered
+	return append(nameMatches, effectMatches...)
 }
 
 // GetUniqueItemTypes extracts all unique item types from a slice of items.

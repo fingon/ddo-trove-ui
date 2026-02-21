@@ -1,8 +1,10 @@
 package templates
 
-import "github.com/fingon/ddo-trove-ui/db"
-import "strconv"
-import "strings"
+import (
+	"github.com/fingon/ddo-trove-ui/db"
+	"strconv"
+	"strings"
+)
 
 templ ItemList(items []db.Item, selectedType string, selectedSubType string, selectedCharacter string, currentPage, totalPages, totalFilteredItemsCount int, selectedEquipsTo string) {
 	// Pagination controls at the top
@@ -18,7 +20,6 @@ templ ItemList(items []db.Item, selectedType string, selectedSubType string, sel
 				Previous
 			</button>
 		}
-
 		// Show page numbers (simplified logic for templ)
 		if totalPages <= 10 {
 			for i := 1; i <= totalPages; i++ {
@@ -74,7 +75,6 @@ templ ItemList(items []db.Item, selectedType string, selectedSubType string, sel
 				}
 			}
 		}
-
 		if currentPage < totalPages {
 			<button
 				hx-get={ "/filter?itemType=" + selectedType + "&itemSubType=" + selectedSubType + "&characterName=" + selectedCharacter + "&page=" + strconv.Itoa(currentPage+1) + "&equipsTo=" + selectedEquipsTo }
@@ -87,9 +87,7 @@ templ ItemList(items []db.Item, selectedType string, selectedSubType string, sel
 			</button>
 		}
 	</div>
-
 	<p class="item-count">Found { strconv.Itoa(totalFilteredItemsCount) } items.</p>
-
 	<div class="item-list">
 		if len(items) == 0 {
 			<p>No items found matching the selected criteria.</p>
@@ -97,7 +95,7 @@ templ ItemList(items []db.Item, selectedType string, selectedSubType string, sel
 			for _, item := range items {
 				<div class="item-row">
 					if item.IconSource != "" {
-						<img src={ item.IconSource } alt="Item Icon" class="item-icon">
+						<img src={ item.IconSource } alt="Item Icon" class="item-icon"/>
 					}
 					if item.Binding == "BoundToCharacter" {
 						<div class="item-name btc">{ item.Name } (BTC)</div>
@@ -109,7 +107,6 @@ templ ItemList(items []db.Item, selectedType string, selectedSubType string, sel
 					<div class="item-min-level">Lvl: { strconv.Itoa(item.MinimumLevel) }</div>
 					<div class="item-quantity">Qty: { strconv.Itoa(item.Quantity) }</div>
 					<div class="item-equips-to">Equips: { strings.Join(item.EquipsTo, ", ") }</div>
-
 					<div class="item-tooltip">
 						if item.Binding == "BoundToCharacter" {
 							<h4 class="btc">{ item.Name } (BTC)</h4>
@@ -163,7 +160,6 @@ templ ItemList(items []db.Item, selectedType string, selectedSubType string, sel
 				Previous
 			</button>
 		}
-
 		// Show page numbers (simplified logic for templ)
 		if totalPages <= 10 {
 			for i := 1; i <= totalPages; i++ {
@@ -219,7 +215,6 @@ templ ItemList(items []db.Item, selectedType string, selectedSubType string, sel
 				}
 			}
 		}
-
 		if currentPage < totalPages {
 			<button
 				hx-get={ "/filter?itemType=" + selectedType + "&itemSubType=" + selectedSubType + "&characterName=" + selectedCharacter + "&page=" + strconv.Itoa(currentPage+1) + "&equipsTo=" + selectedEquipsTo }

@@ -16,57 +16,11 @@ import (
 	"github.com/fingon/ddo-trove-ui/templates"
 )
 
-// Helper functions for pagination
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func getPaginationRange(currentPage, totalPages int) (int, int) {
-	maxButtonsToShow := 10
-	startPage := currentPage - 4
-	endPage := currentPage + 5
-
-	// Adjust if the start page goes below 1
-	if startPage < 1 {
-		startPage = 1
-		if totalPages < maxButtonsToShow {
-			endPage = totalPages
-		} else {
-			endPage = maxButtonsToShow
-		}
-	}
-
-	// Adjust if the end page goes above totalPages
-	if endPage > totalPages {
-		endPage = totalPages
-		if totalPages > maxButtonsToShow {
-			startPage = totalPages - maxButtonsToShow + 1
-		} else {
-			startPage = 1
-		}
-	}
-
-	// Final check to ensure startPage is not less than 1 after adjustments
-	if startPage < 1 {
-		startPage = 1
-	}
-
-	return startPage, endPage
-}
-
 const (
-	itemsPerPage = 100
-	defaultPage  = 1
+	itemsPerPage    = 100
+	defaultPage     = 1
+	defaultMinLevel = 0
+	defaultMaxLevel = 40
 )
 
 var (
@@ -75,6 +29,105 @@ var (
 	fileModTimes map[string]time.Time
 	itemsMutex   sync.Mutex
 )
+
+// FilterParams holds the parsed filter parameters from an HTTP request.
+type FilterParams struct {
+	ItemType      string
+	ItemSubType   string
+	CharacterName string
+	NameSearch    string
+	EquipsTo      string
+	MinLevel      int
+	MaxLevel      int
+	Page          int
+}
+
+// ParseFilterParams extracts and validates filter parameters from the request.
+func ParseFilterParams(r *http.Request) FilterParams {
+	params := FilterParams{
+		ItemType:      r.URL.Query().Get("itemType"),
+		ItemSubType:   r.URL.Query().Get("itemSubType"),
+		CharacterName: r.URL.Query().Get("characterName"),
+		NameSearch:    r.URL.Query().Get("nameSearch"),
+		EquipsTo:      r.URL.Query().Get("equipsTo"),
+		MinLevel:      defaultMinLevel,
+		MaxLevel:      defaultMaxLevel,
+	}
+
+	if params.ItemType == "" {
+		params.ItemType = db.FilterAll
+	}
+	if params.ItemSubType == "" {
+		params.ItemSubType = db.FilterAll
+	}
+	if params.CharacterName == "" {
+		params.CharacterName = db.FilterAll
+	}
+	if params.EquipsTo == "" {
+		params.EquipsTo = db.FilterAll
+	}
+
+	if minLevelStr := r.URL.Query().Get("minLevel"); minLevelStr != "" {
+		if minLevel, err := strconv.Atoi(minLevelStr); err == nil && minLevel >= 0 {
+			params.MinLevel = minLevel
+		}
+	}
+
+	if maxLevelStr := r.URL.Query().Get("maxLevel"); maxLevelStr != "" {
+		if maxLevel, err := strconv.Atoi(maxLevelStr); err == nil && maxLevel >= 0 {
+			params.MaxLevel = maxLevel
+		}
+	}
+
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if page, err := strconv.Atoi(pageStr); err == nil && page >= 1 {
+			params.Page = page
+		}
+	}
+
+	return params
+}
+
+// PaginationResult holds the result of filtering and pagination.
+type PaginationResult struct {
+	Items      []db.Item
+	Page       int
+	TotalPages int
+	TotalCount int
+}
+
+// ApplyFilterAndPaginate applies filtering and pagination to items.
+func ApplyFilterAndPaginate(items []db.Item, params FilterParams) PaginationResult {
+	filteredItems := db.FilterItems(items, params.ItemType, params.ItemSubType, params.CharacterName, params.NameSearch, params.MinLevel, params.MaxLevel, params.EquipsTo)
+
+	totalCount := len(filteredItems)
+	totalPages := (totalCount + itemsPerPage - 1) / itemsPerPage
+	if totalPages == 0 {
+		totalPages = 1
+	}
+
+	page := params.Page
+	if page < 1 {
+		page = 1
+	}
+	startIndex := (page - 1) * itemsPerPage
+	endIndex := startIndex + itemsPerPage
+	if startIndex >= totalCount {
+		startIndex = 0
+		endIndex = itemsPerPage
+		page = defaultPage
+	}
+	if endIndex > totalCount {
+		endIndex = totalCount
+	}
+
+	return PaginationResult{
+		Items:      filteredItems[startIndex:endIndex],
+		Page:       page,
+		TotalPages: totalPages,
+		TotalCount: totalCount,
+	}
+}
 
 // loadAndAggregateItems loads items from multiple directories and aggregates them.
 // It returns the combined AllItems.
@@ -218,146 +271,29 @@ func main() {
 
 	// HTTP Handlers
 	http.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Acquire lock before accessing allItems
 		itemsMutex.Lock()
 		defer itemsMutex.Unlock()
 
-		itemType := r.URL.Query().Get("itemType")
-		if itemType == "" {
-			itemType = "All" // Default to "All" if not specified
-		}
+		params := ParseFilterParams(r)
+		result := ApplyFilterAndPaginate(allItems.Items, params)
 
-		itemSubType := r.URL.Query().Get("itemSubType")
-		if itemSubType == "" {
-			itemSubType = "All" // Default to "All" if not specified
-		}
+		log.Printf("Initial load/filter by itemType='%s', itemSubType='%s', characterName='%s', nameSearch='%s', minLevel=%d, maxLevel=%d, equipsTo='%s'. Found %d items.",
+			params.ItemType, params.ItemSubType, params.CharacterName, params.NameSearch, params.MinLevel, params.MaxLevel, params.EquipsTo, result.TotalCount)
 
-		characterName := r.URL.Query().Get("characterName")
-		if characterName == "" {
-			characterName = "All" // Default to "All" if not specified
-		}
-
-		nameSearch := r.URL.Query().Get("nameSearch")
-
-		minLevelStr := r.URL.Query().Get("minLevel")
-		minLevel, err := strconv.Atoi(minLevelStr)
-		if err != nil || minLevel < 0 {
-			minLevel = 0 // Default minimum level
-		}
-
-		maxLevelStr := r.URL.Query().Get("maxLevel")
-		maxLevel, err := strconv.Atoi(maxLevelStr)
-		if err != nil || maxLevel < 0 {
-			maxLevel = 40 // Default maximum level
-		}
-
-		// New: EquipsTo filter parameter
-		equipsTo := r.URL.Query().Get("equipsTo")
-		if equipsTo == "" {
-			equipsTo = "All" // Default to "All" if not specified
-		}
-
-		pageStr := r.URL.Query().Get("page")
-		page, err := strconv.Atoi(pageStr)
-		if err != nil || page < 1 {
-			page = defaultPage // Default to page 1
-		}
-
-		filteredItems := db.FilterItems(allItems.Items, itemType, itemSubType, characterName, nameSearch, minLevel, maxLevel, equipsTo) // Pass equipsTo
-		log.Printf("Initial load/filter by itemType='%s', itemSubType='%s', characterName='%s', nameSearch='%s', minLevel=%d, maxLevel=%d, equipsTo='%s'. Found %d items.", itemType, itemSubType, characterName, nameSearch, minLevel, maxLevel, equipsTo, len(filteredItems))
-
-		// Calculate total pages
-		totalPages := (len(filteredItems) + itemsPerPage - 1) / itemsPerPage
-		if totalPages == 0 {
-			totalPages = 1 // Ensure at least one page even if no items
-		}
-
-		// Apply pagination
-		startIndex := (page - 1) * itemsPerPage
-		endIndex := startIndex + itemsPerPage
-		if startIndex >= len(filteredItems) {
-			startIndex = 0 // Reset to first page if page is out of bounds
-			endIndex = itemsPerPage
-			page = defaultPage
-		}
-		if endIndex > len(filteredItems) {
-			endIndex = len(filteredItems)
-		}
-		paginatedItems := filteredItems[startIndex:endIndex]
-
-		templates.Index(paginatedItems, db.GetUniqueItemTypes(allItems.Items), itemType, db.GetUniqueItemSubTypes(allItems.Items), itemSubType, db.GetUniqueCharacterNames(allItems.Items), characterName, minLevel, maxLevel, page, totalPages, len(filteredItems), db.GetUniqueEquipsTo(allItems.Items), equipsTo).Render(context.Background(), w) // Pass uniqueEquipsTo and equipsTo
+		_ = templates.Index(result.Items, db.GetUniqueItemTypes(allItems.Items), params.ItemType, db.GetUniqueItemSubTypes(allItems.Items), params.ItemSubType, db.GetUniqueCharacterNames(allItems.Items), params.CharacterName, params.MinLevel, params.MaxLevel, result.Page, result.TotalPages, result.TotalCount, db.GetUniqueEquipsTo(allItems.Items), params.EquipsTo).Render(context.Background(), w)
 	}))
 
 	http.HandleFunc("/filter", func(w http.ResponseWriter, r *http.Request) {
-		// Acquire read lock before accessing allItems
 		itemsMutex.Lock()
 		defer itemsMutex.Unlock()
 
-		itemType := r.URL.Query().Get("itemType")
-		if itemType == "" {
-			itemType = "All" // Default to "All" if not specified
-		}
+		params := ParseFilterParams(r)
+		result := ApplyFilterAndPaginate(allItems.Items, params)
 
-		itemSubType := r.URL.Query().Get("itemSubType")
-		if itemSubType == "" {
-			itemSubType = "All" // Default to "All" if not specified
-		}
+		log.Printf("Filtering by itemType='%s', itemSubType='%s', characterName='%s', nameSearch='%s', minLevel=%d, maxLevel=%d, equipsTo='%s', page %d. Found %d items.",
+			params.ItemType, params.ItemSubType, params.CharacterName, params.NameSearch, params.MinLevel, params.MaxLevel, params.EquipsTo, result.Page, result.TotalCount)
 
-		characterName := r.URL.Query().Get("characterName")
-		if characterName == "" {
-			characterName = "All" // Default to "All" if not specified
-		}
-
-		nameSearch := r.URL.Query().Get("nameSearch")
-
-		minLevelStr := r.URL.Query().Get("minLevel")
-		minLevel, err := strconv.Atoi(minLevelStr)
-		if err != nil || minLevel < 0 {
-			minLevel = 0 // Default minimum level
-		}
-
-		maxLevelStr := r.URL.Query().Get("maxLevel")
-		maxLevel, err := strconv.Atoi(maxLevelStr)
-		if err != nil || maxLevel < 0 {
-			maxLevel = 40 // Default maximum level
-		}
-
-		// New: EquipsTo filter parameter
-		equipsTo := r.URL.Query().Get("equipsTo")
-		if equipsTo == "" {
-			equipsTo = "All" // Default to "All" if not specified
-		}
-
-		pageStr := r.URL.Query().Get("page")
-		page, err := strconv.Atoi(pageStr)
-		if err != nil || page < 1 {
-			page = defaultPage // Default to page 1
-		}
-
-		filteredItems := db.FilterItems(allItems.Items, itemType, itemSubType, characterName, nameSearch, minLevel, maxLevel, equipsTo) // Pass equipsTo
-		log.Printf("Filtering by itemType='%s', itemSubType='%s', characterName='%s', nameSearch='%s', minLevel=%d, maxLevel=%d, equipsTo='%s', page %d. Found %d items.", itemType, itemSubType, characterName, nameSearch, minLevel, maxLevel, equipsTo, page, len(filteredItems))
-
-		// Calculate total pages
-		totalPages := (len(filteredItems) + itemsPerPage - 1) / itemsPerPage
-		if totalPages == 0 {
-			totalPages = 1 // Ensure at least one page even if no items
-		}
-
-		// Apply pagination
-		startIndex := (page - 1) * itemsPerPage
-		endIndex := startIndex + itemsPerPage
-		if startIndex >= len(filteredItems) {
-			startIndex = 0 // Reset to first page if page is out of bounds
-			endIndex = itemsPerPage
-			page = defaultPage
-		}
-		if endIndex > len(filteredItems) {
-			endIndex = len(filteredItems)
-		}
-		paginatedItems := filteredItems[startIndex:endIndex]
-
-		// Render only the item list part for HTMX
-		templates.ItemList(paginatedItems, itemType, itemSubType, characterName, page, totalPages, len(filteredItems), equipsTo).Render(context.Background(), w) // Pass equipsTo
+		_ = templates.ItemList(result.Items, params.ItemType, params.ItemSubType, params.CharacterName, result.Page, result.TotalPages, result.TotalCount, params.EquipsTo).Render(context.Background(), w)
 	})
 
 	port := ":8080"

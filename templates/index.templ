@@ -21,11 +21,11 @@ templ Index(items []db.Item, itemTypes []string, selectedType string, itemSubTyp
 					hx-include="#itemSubTypeFilter, #characterFilter, #nameSearch, #minLevel, #maxLevel, #equipsToFilter"
 				>
 					<option
-						value="All"
-						if selectedType == "" || selectedType == "All" {
+						value={ db.FilterAll }
+						if selectedType == db.FilterAll {
 							selected
 						}
-					>All</option>
+					>{ db.FilterAll }</option>
 					for _, itemType := range itemTypes {
 						<option
 							value={ itemType }
@@ -46,11 +46,11 @@ templ Index(items []db.Item, itemTypes []string, selectedType string, itemSubTyp
 					hx-include="#itemTypeFilter, #characterFilter, #nameSearch, #minLevel, #maxLevel, #equipsToFilter"
 				>
 					<option
-						value="All"
-						if selectedSubType == "" || selectedSubType == "All" {
+						value={ db.FilterAll }
+						if selectedSubType == db.FilterAll {
 							selected
 						}
-					>All</option>
+					>{ db.FilterAll }</option>
 					for _, itemSubType := range itemSubTypes {
 						<option
 							value={ itemSubType }
@@ -71,11 +71,11 @@ templ Index(items []db.Item, itemTypes []string, selectedType string, itemSubTyp
 					hx-include="#itemTypeFilter, #itemSubTypeFilter, #nameSearch, #minLevel, #maxLevel, #equipsToFilter"
 				>
 					<option
-						value="All"
-						if selectedCharacter == "" || selectedCharacter == "All" {
+						value={ db.FilterAll }
+						if selectedCharacter == db.FilterAll {
 							selected
 						}
-					>All</option>
+					>{ db.FilterAll }</option>
 					for _, charName := range characterNames {
 						<option
 							value={ charName }
@@ -98,11 +98,11 @@ templ Index(items []db.Item, itemTypes []string, selectedType string, itemSubTyp
 					hx-include="#itemTypeFilter, #itemSubTypeFilter, #characterFilter, #nameSearch, #minLevel, #maxLevel"
 				>
 					<option
-						value="All"
-						if selectedEquipsTo == "" || selectedEquipsTo == "All" {
+						value={ db.FilterAll }
+						if selectedEquipsTo == db.FilterAll {
 							selected
 						}
-					>All</option>
+					>{ db.FilterAll }</option>
 					for _, equipsTo := range uniqueEquipsTo {
 						<option
 							value={ equipsTo }

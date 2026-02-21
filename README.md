@@ -56,3 +56,13 @@ This is a simple web UI for browsing DDO (Dungeons and Dragons Online) item data
 ## Development
 
 This project uses [Templ](https://templ.guide/) for HTML templating. To regenerate Go code from `.templ` files after making changes: Run `make build`.
+
+This project uses [prek](https://prek.j178.dev/) for code quality checks. To install hooks:
+```bash
+prek install
+```
+
+To run all checks:
+```bash
+prek run --all-files
+```

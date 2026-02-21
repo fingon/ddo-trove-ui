@@ -1,0 +1,104 @@
+version: "2"
+linters:
+  enable:
+    - bidichk
+    - bodyclose
+    - durationcheck
+    - errchkjson
+    - errname
+    - exptostd
+    - goconst
+    - gocritic
+    - intrange
+    - misspell
+    - nestif
+    - nilerr
+    - perfsprint
+    # - prealloc # performance, but not useful
+    - reassign
+    - revive
+    - sloglint
+    - sqlclosecheck
+    - tagalign
+    # - tagliatelle # bad idea with external JSON schema
+    - tparallel
+    - unconvert
+    - usetesting
+    - wastedassign
+    - whitespace
+  settings:
+    gocritic:
+      disabled-checks:
+        - captLocal
+    nestif:
+      min-complexity: 7
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: empty-block
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: exported
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: unused-parameter
+        - name: var-declaration
+        - name: var-naming
+        - name: receiver-naming
+          disabled: true
+    tagalign:
+      align: false
+      sort: true
+    tagliatelle:
+      case:
+        rules:
+          json: snake
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+    issues:
+      - linters:
+          - tagliatelle
+        path: db/item.go
+      - linters:
+          - revive
+        path: db/item.go
+        text: "var-naming"
+      - linters:
+          - errcheck
+        text: ".Render\\(context\\.Background"
+formatters:
+  enable:
+    - gci
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      extra-rules: true
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
