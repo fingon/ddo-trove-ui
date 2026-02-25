@@ -4,7 +4,7 @@ This document provides guidelines for agentic coding agents working in this repo
 
 ## Project Overview
 
-DDO Trove UI is a Go-based web application that provides a UI for browsing DDO (Dungeons and Dragons Online) item data from JSON files. It uses the [Templ](https://templ.guide/) package for type-safe HTML templating.
+DDO Trove UI is a Go-based web application that provides a UI for browsing DDO (Dungeons and Dragons Online) item data from JSON files. It uses the [gomponents](https://www.gomponents.com/) package for type-safe HTML generation.
 
 ## Build, Lint, and Test Commands
 
@@ -23,9 +23,6 @@ make run
 ```bash
 # Full build (runs lint first, then compiles)
 make build
-
-# Build only templates (generates Go from .templ files)
-make -C templates
 ```
 
 ### Linting
@@ -65,7 +62,7 @@ go tool templ generate -f templates/item_list.templ
 ### Development Tools
 
 ```bash
-# Install required tools (golangci-lint, templ)
+# Install required tools (golangci-lint)
 make install-tools
 
 # Install pre-commit hooks (requires prek)
@@ -80,7 +77,7 @@ prek run --all-files
 ### General
 
 - This is a Go project using Go 1.25+
-- Uses [Templ](https://templ.guide/) for HTML generation - **never edit the generated `*_templ.go` files directly**, edit the `.templ` source files instead
+- Uses [gomponents](https://www.gomponents.com/) for HTML generation
 - All code must pass `golangci-lint run`
 
 ### Formatting
@@ -150,6 +147,7 @@ The project uses golangci-lint with these specific rules:
 
 **Exceptions:**
 - `db/item.go` has exceptions for tagliatelle and var-naming (due to external JSON schema compatibility)
+- `templates/*.go` have exceptions for dot-imports and unconvert (gomponents idiomatic patterns)
 
 ### Pre-commit Hooks
 
@@ -158,7 +156,6 @@ The project uses pre-commit hooks (configured in `.pre-commit-config.yaml`):
 1. Built-in hooks: check-case-conflict, check-merge-conflict, check-yaml, detect-private-key, end-of-file-fixer, mixed-line-ending, trailing-whitespace
 2. Local hooks:
    - `fmt-golangci-lint`: Runs `golangci-lint run --fix` on Go files
-   - `fmt-templ-guide`: Runs `templ fmt` on .templ files
 
 ### File Organization
 
@@ -168,33 +165,39 @@ The project uses pre-commit hooks (configured in `.pre-commit-config.yaml`):
 ├── db/
 │   └── item.go          # Data models and filtering logic
 ├── templates/
-│   ├── *.templ          # Templ source files (edit these!)
-│   └── *_templ.go       # Generated Go files (do not edit)
+│   └── *.go             # Gomponents template files
 ├── static/              # CSS and other static assets
-└── Makefile             # Build commands
+└── Makefile            # Build commands
 ```
 
-### Working with Templ Files
+### Working with Gomponents
 
 When editing UI components:
 
-1. Edit the `.templ` source files in `templates/`
-2. Run `templ generate -f <file>` or `make -C templates` to regenerate Go code
-3. The generated files are committed to the repository
+1. Edit the `.go` files in `templates/`
+2. Gomponents is pure Go - no code generation needed
+3. Use dot imports for the html package as shown in existing files
 
-Example templ file structure:
-```templ
+Example gomponents file structure:
+```go
 package templates
 
-func Index(...) templ.Component {
-    return templHTML()
+import (
+    g "maragu.dev/gomponents"
+    . "maragu.dev/gomponents/html"
+)
+
+func Index(...) g.Node {
+    return Div(Class("container"),
+        H1(g.Text("Hello World")),
+    )
 }
 ```
 
-### Context Usage
+### Rendering
 
-- Use `context.Background()` for templ Render calls (as seen in main.go)
-- Pass context through HTTP handlers when needed
+- Gomponents components render directly to an `io.Writer`
+- In main.go, use `.Render(w)` instead of `.Render(context.Background(), w)`
 
 ### Logging
 

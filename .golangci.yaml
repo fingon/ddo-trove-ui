@@ -88,6 +88,14 @@ linters:
       - linters:
           - errcheck
         text: ".Render\\(context\\.Background"
+      - linters:
+          - revive
+        path: .*/templates/.*\\.go$
+        text: "dot-imports"
+      - linters:
+          - unconvert
+        path: .*/templates/.*\\.go$
+        text: "g\\.Group\\(g\\.Map"
 formatters:
   enable:
     - gci

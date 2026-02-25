@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -280,7 +279,7 @@ func main() {
 		log.Printf("Initial load/filter by itemType='%s', itemSubType='%s', characterName='%s', nameSearch='%s', minLevel=%d, maxLevel=%d, equipsTo='%s'. Found %d items.",
 			params.ItemType, params.ItemSubType, params.CharacterName, params.NameSearch, params.MinLevel, params.MaxLevel, params.EquipsTo, result.TotalCount)
 
-		_ = templates.Index(result.Items, db.GetUniqueItemTypes(allItems.Items), params.ItemType, db.GetUniqueItemSubTypes(allItems.Items), params.ItemSubType, db.GetUniqueCharacterNames(allItems.Items), params.CharacterName, params.MinLevel, params.MaxLevel, result.Page, result.TotalPages, result.TotalCount, db.GetUniqueEquipsTo(allItems.Items), params.EquipsTo).Render(context.Background(), w)
+		_ = templates.Index(result.Items, db.GetUniqueItemTypes(allItems.Items), params.ItemType, db.GetUniqueItemSubTypes(allItems.Items), params.ItemSubType, db.GetUniqueCharacterNames(allItems.Items), params.CharacterName, params.MinLevel, params.MaxLevel, result.Page, result.TotalPages, result.TotalCount, db.GetUniqueEquipsTo(allItems.Items), params.EquipsTo).Render(w)
 	}))
 
 	http.HandleFunc("/filter", func(w http.ResponseWriter, r *http.Request) {
@@ -293,7 +292,7 @@ func main() {
 		log.Printf("Filtering by itemType='%s', itemSubType='%s', characterName='%s', nameSearch='%s', minLevel=%d, maxLevel=%d, equipsTo='%s', page %d. Found %d items.",
 			params.ItemType, params.ItemSubType, params.CharacterName, params.NameSearch, params.MinLevel, params.MaxLevel, params.EquipsTo, result.Page, result.TotalCount)
 
-		_ = templates.ItemList(result.Items, params.ItemType, params.ItemSubType, params.CharacterName, result.Page, result.TotalPages, result.TotalCount, params.EquipsTo).Render(context.Background(), w)
+		_ = templates.ItemList(result.Items, params.ItemType, params.ItemSubType, params.CharacterName, result.Page, result.TotalPages, result.TotalCount, params.EquipsTo).Render(w)
 	})
 
 	port := ":8080"
