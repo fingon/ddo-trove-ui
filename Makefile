@@ -4,14 +4,10 @@
 # Copyright (c) 2025 Markus Stenberg
 #
 # Created:       Tue Aug 19 15:53:13 2025 mstenber
-# Last modified: Sat Feb 21 12:30:39 2026 mstenber
+# Last modified: Sat Feb 21 18:30:13 2026 mstenber
 # Edit time:     25 min
 #
 #
-
-PROJECT_NAME=ddo-trove-ui
-OPENCODE_CONTAINER_NAME=$(PROJECT_NAME)-opencode
-PWD=$(shell pwd)
 
 run: build
 	go run . data*
