@@ -17,6 +17,9 @@ build: lint
 lint: templates
 	go tool golangci-lint run
 
+test:
+	go test ./...
+
 templates:
 	make -C templates
 

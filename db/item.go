@@ -3,6 +3,7 @@ package db
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -10,24 +11,28 @@ import (
 	"time"
 )
 
-const FilterAll = "All"
+const (
+	FilterAll               = "All"
+	BindingBoundToCharacter = "BoundToCharacter"
+	jsonFileSuffix          = ".json"
+	accountSharedBankName   = "Account (Shared Bank)"
+	accountCraftingBankName = "Account (Crafting Bank)"
+)
 
-// Root structure for character-specific bank/inventory files
 type CharacterData struct {
 	CharacterID         int64      `json:"CharacterId"`
 	Name                string     `json:"Name"`
-	LastUpdated         *time.Time `json:"LastUpdated"` // Use pointer for optional/null
+	LastUpdated         *time.Time `json:"LastUpdated"`
 	PersonalBank        *Bank      `json:"PersonalBank"`
 	ReincarnationBank   *Bank      `json:"ReincarnationBank"`
-	Inventory           []Item     `json:"Inventory"` // Inventory is a direct list of items
+	Inventory           []Item     `json:"Inventory"`
 	Server              string     `json:"Server"`
 	SubscriptionKeyHash string     `json:"SubscriptionKeyHash"`
-	SubscriptionAlias   *string    `json:"SubscriptionAlias"` // Use pointer for optional/null
+	SubscriptionAlias   *string    `json:"SubscriptionAlias"`
 	UsedCapacity        int        `json:"UsedCapacity"`
 	MaxCapacity         int        `json:"MaxCapacity"`
 }
 
-// Root structure for account-wide shared bank file
 type AccountData struct {
 	SharedBank          *Bank   `json:"SharedBank"`
 	CraftingBank        *Bank   `json:"CraftingBank"`
@@ -38,7 +43,6 @@ type AccountData struct {
 	MaxCapacity         int     `json:"MaxCapacity"`
 }
 
-// Generic Bank structure (Personal, Reincarnation, Shared, Crafting)
 type Bank struct {
 	BankType int            `json:"BankType"`
 	Tabs     map[string]Tab `json:"Tabs"`
@@ -55,7 +59,6 @@ type Page struct {
 	Items []Item `json:"Items"`
 }
 
-// Item structure (common for all containers)
 type Item struct {
 	OwnerID              int64         `json:"OwnerId"`
 	CharacterName        string        `json:"CharacterName"`
@@ -110,99 +113,86 @@ type Effect struct {
 	Description string `json:"Description"`
 }
 
-// AllItems holds all parsed items from all JSON files
 type AllItems struct {
 	Items []Item
 }
 
-// LoadItemsFromDir reads all JSON files from a directory and parses them into Item structs.
-func LoadItemsFromDir(dirPath string) (*AllItems, error) {
-	var allItems AllItems
+func LoadItemsFromDir(dirPath string) (allItems *AllItems, err error) {
+	allItems = &AllItems{}
 
-	files, err := os.ReadDir(dirPath) // Changed from ioutil.ReadDir
+	files, err := os.ReadDir(dirPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read directory: %w", err)
+		return nil, fmt.Errorf("read directory %q: %w", dirPath, err)
 	}
 
 	for _, file := range files {
-		if file.IsDir() || !strings.HasSuffix(file.Name(), ".json") {
+		if file.IsDir() || !strings.HasSuffix(file.Name(), jsonFileSuffix) {
 			continue
 		}
 
 		filePath := filepath.Join(dirPath, file.Name())
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-			fmt.Printf("Warning: Failed to read file %s: %v\n", filePath, err)
+		data, readErr := os.ReadFile(filePath)
+		if readErr != nil {
+			slog.Warn("failed to read JSON file", "path", filePath, "err", readErr)
 			continue
 		}
 
-		// Try to unmarshal as CharacterData first
 		var charData CharacterData
-		if err := json.Unmarshal(data, &charData); err == nil {
-			// Assign CharacterName to items from PersonalBank, ReincarnationBank, and Inventory
-			if charData.PersonalBank != nil {
-				for _, tab := range charData.PersonalBank.Tabs {
-					for _, page := range tab.Pages {
-						for i := range page.Items {
-							page.Items[i].CharacterName = charData.Name
-						}
-						allItems.Items = append(allItems.Items, page.Items...)
-					}
-				}
+		if unmarshalErr := json.Unmarshal(data, &charData); unmarshalErr == nil {
+			if hasCharacterPayload(charData) {
+				appendItemsFromBank(&allItems.Items, charData.PersonalBank, charData.Name)
+				appendItemsFromBank(&allItems.Items, charData.ReincarnationBank, charData.Name)
+				appendItemsWithCharacter(&allItems.Items, charData.Inventory, charData.Name)
+				continue
 			}
-			if charData.ReincarnationBank != nil {
-				for _, tab := range charData.ReincarnationBank.Tabs {
-					for _, page := range tab.Pages {
-						for i := range page.Items {
-							page.Items[i].CharacterName = charData.Name
-						}
-						allItems.Items = append(allItems.Items, page.Items...)
-					}
-				}
-			}
-			if charData.Inventory != nil {
-				for i := range charData.Inventory {
-					charData.Inventory[i].CharacterName = charData.Name
-				}
-				allItems.Items = append(allItems.Items, charData.Inventory...)
-			}
-			continue // Successfully parsed as CharacterData
 		}
 
-		// If not CharacterData, try to unmarshal as AccountData
 		var accountData AccountData
-		if err := json.Unmarshal(data, &accountData); err == nil {
-			// Assign a default "Account" character name to shared bank items
-			if accountData.SharedBank != nil {
-				for _, tab := range accountData.SharedBank.Tabs {
-					for _, page := range tab.Pages {
-						for i := range page.Items {
-							page.Items[i].CharacterName = "Account (Shared Bank)"
-						}
-						allItems.Items = append(allItems.Items, page.Items...)
-					}
-				}
+		if unmarshalErr := json.Unmarshal(data, &accountData); unmarshalErr == nil {
+			if hasAccountPayload(accountData) {
+				appendItemsFromBank(&allItems.Items, accountData.SharedBank, accountSharedBankName)
+				appendItemsFromBank(&allItems.Items, accountData.CraftingBank, accountCraftingBankName)
+				continue
 			}
-			if accountData.CraftingBank != nil {
-				for _, tab := range accountData.CraftingBank.Tabs {
-					for _, page := range tab.Pages {
-						for i := range page.Items {
-							page.Items[i].CharacterName = "Account (Crafting Bank)"
-						}
-						allItems.Items = append(allItems.Items, page.Items...)
-					}
-				}
-			}
-			continue // Successfully parsed as AccountData
 		}
 
-		fmt.Printf("Warning: Could not unmarshal %s as either CharacterData or AccountData. Error: %v\n", filePath, err)
+		slog.Warn("failed to unmarshal file as character/account data", "path", filePath)
 	}
 
-	return &allItems, nil // Return fileModTimes
+	return allItems, nil
 }
 
-// FilterItems filters a slice of items by item type, item sub type, character name, name search, minimum level range, and equips to.
+func hasCharacterPayload(value CharacterData) bool {
+	return value.Name != "" || value.PersonalBank != nil || value.ReincarnationBank != nil || len(value.Inventory) > 0
+}
+
+func hasAccountPayload(value AccountData) bool {
+	return value.SharedBank != nil || value.CraftingBank != nil
+}
+
+func appendItemsFromBank(dst *[]Item, bank *Bank, characterName string) {
+	if bank == nil {
+		return
+	}
+	for _, tab := range bank.Tabs {
+		for _, page := range tab.Pages {
+			appendItemsWithCharacter(dst, page.Items, characterName)
+		}
+	}
+}
+
+func appendItemsWithCharacter(dst *[]Item, source []Item, characterName string) {
+	if len(source) == 0 {
+		return
+	}
+	items := make([]Item, len(source))
+	copy(items, source)
+	for index := range items {
+		items[index].CharacterName = characterName
+	}
+	*dst = append(*dst, items...)
+}
+
 func FilterItems(items []Item, itemType, itemSubType, characterName, nameSearch string, minLevel, maxLevel int, equipsTo string) []Item {
 	var nameMatches []Item
 	var effectMatches []Item
@@ -210,14 +200,13 @@ func FilterItems(items []Item, itemType, itemSubType, characterName, nameSearch 
 	searchLower := strings.ToLower(nameSearch)
 
 	for _, item := range items {
-		matchItemType := (itemType == "" || itemType == FilterAll || item.ItemType == itemType)
-		matchItemSubType := (itemSubType == "" || itemSubType == FilterAll || item.ItemSubType == itemSubType)
-		matchCharacterName := (characterName == "" || characterName == FilterAll || item.CharacterName == characterName)
-		matchMinLevel := (item.MinimumLevel >= minLevel && item.MinimumLevel <= maxLevel)
+		matchItemType := itemType == "" || itemType == FilterAll || item.ItemType == itemType
+		matchItemSubType := itemSubType == "" || itemSubType == FilterAll || item.ItemSubType == itemSubType
+		matchCharacterName := characterName == "" || characterName == FilterAll || item.CharacterName == characterName
+		matchMinLevel := item.MinimumLevel >= minLevel && item.MinimumLevel <= maxLevel
 
-		// EquipsTo filter
-		matchEquipsTo := (equipsTo == "" || equipsTo == FilterAll)
-		if !matchEquipsTo { // Only check if a specific filter is selected
+		matchEquipsTo := equipsTo == "" || equipsTo == FilterAll
+		if !matchEquipsTo {
 			for _, eq := range item.EquipsTo {
 				if eq == equipsTo {
 					matchEquipsTo = true
@@ -226,45 +215,39 @@ func FilterItems(items []Item, itemType, itemSubType, characterName, nameSearch 
 			}
 		}
 
-		// Skip if basic filters don't match
 		if !matchItemType || !matchItemSubType || !matchCharacterName || !matchMinLevel || !matchEquipsTo {
 			continue
 		}
 
-		// Full text search logic
 		if nameSearch == "" {
 			nameMatches = append(nameMatches, item)
-		} else {
-			// Check name match first
-			nameMatch := strings.Contains(strings.ToLower(item.Name), searchLower)
+			continue
+		}
 
-			// Check effects match
-			effectMatch := false
-			for _, effect := range item.Effects {
-				if strings.Contains(strings.ToLower(effect.Name), searchLower) ||
-					strings.Contains(strings.ToLower(effect.Description), searchLower) {
-					effectMatch = true
-					break
-				}
+		nameMatch := strings.Contains(strings.ToLower(item.Name), searchLower)
+		effectMatch := false
+		for _, effect := range item.Effects {
+			if strings.Contains(strings.ToLower(effect.Name), searchLower) ||
+				strings.Contains(strings.ToLower(effect.Description), searchLower) {
+				effectMatch = true
+				break
 			}
+		}
 
-			// Also check description and clicky
-			descMatch := strings.Contains(strings.ToLower(item.Description), searchLower)
-			clickyMatch := false
-			if item.Clicky != nil {
-				clickyMatch = strings.Contains(strings.ToLower(item.Clicky.SpellName), searchLower) ||
-					strings.Contains(strings.ToLower(item.Clicky.SpellDescription), searchLower)
-			}
+		descMatch := strings.Contains(strings.ToLower(item.Description), searchLower)
+		clickyMatch := false
+		if item.Clicky != nil {
+			clickyMatch = strings.Contains(strings.ToLower(item.Clicky.SpellName), searchLower) ||
+				strings.Contains(strings.ToLower(item.Clicky.SpellDescription), searchLower)
+		}
 
-			if nameMatch {
-				nameMatches = append(nameMatches, item)
-			} else if effectMatch || descMatch || clickyMatch {
-				effectMatches = append(effectMatches, item)
-			}
+		if nameMatch {
+			nameMatches = append(nameMatches, item)
+		} else if effectMatch || descMatch || clickyMatch {
+			effectMatches = append(effectMatches, item)
 		}
 	}
 
-	// Sort each group by name
 	sort.Slice(nameMatches, func(i, j int) bool {
 		return nameMatches[i].Name < nameMatches[j].Name
 	})
@@ -272,11 +255,9 @@ func FilterItems(items []Item, itemType, itemSubType, characterName, nameSearch 
 		return effectMatches[i].Name < effectMatches[j].Name
 	})
 
-	// Combine results with name matches first
 	return append(nameMatches, effectMatches...)
 }
 
-// GetUniqueItemTypes extracts all unique item types from a slice of items.
 func GetUniqueItemTypes(items []Item) []string {
 	seen := make(map[string]bool)
 	var types []string
@@ -290,7 +271,6 @@ func GetUniqueItemTypes(items []Item) []string {
 	return types
 }
 
-// GetUniqueCharacterNames extracts all unique character names from a slice of items.
 func GetUniqueCharacterNames(items []Item) []string {
 	seen := make(map[string]bool)
 	var names []string
@@ -304,7 +284,6 @@ func GetUniqueCharacterNames(items []Item) []string {
 	return names
 }
 
-// GetUniqueItemSubTypes extracts all unique item sub types from a slice of items.
 func GetUniqueItemSubTypes(items []Item) []string {
 	seen := make(map[string]bool)
 	var subTypes []string
@@ -318,7 +297,6 @@ func GetUniqueItemSubTypes(items []Item) []string {
 	return subTypes
 }
 
-// GetUniqueEquipsTo extracts all unique "EquipsTo" values from a slice of items.
 func GetUniqueEquipsTo(items []Item) []string {
 	seen := make(map[string]bool)
 	var equipsToValues []string
